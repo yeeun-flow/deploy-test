@@ -1,0 +1,45 @@
+name: Deploy to ECS Fargate via CodePipeline
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }}
+  ECS_CLUSTER: ${{ secrets.ECS_CLUSTER_NAME }}
+  ECS_SERVICE: ${{ secrets.ECS_SERVICE_NAME }}
+  ECS_CONTAINER: ${{ secrets.ECS_CONTAINER_NAME }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActions-Role
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build and push Docker image
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+    # CodePipeline 트리거 (선택 사항: CodePipeline을 사용하지 않으면 이 단계 제거)
+    - name: Trigger CodePipeline deployment
+      run: |
+        aws codepipeline start-pipeline-execution --name [CodePipeline 파이프라인 이름]
